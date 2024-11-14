@@ -5,6 +5,7 @@ import (
 	Client "Eulogist/proxy/mc_client"
 	Server "Eulogist/proxy/mc_server"
 	"Eulogist/proxy/persistence_data"
+	WSInterface "Eulogist/ws_interface"
 	"fmt"
 	"os"
 	"os/exec"
@@ -190,7 +191,10 @@ func Eulogist() error {
 			}
 			// 读取、过滤数据包，
 			// 然后抄送其到 Minecraft 客户端
-			errResults, syncError := server.FiltePacketsAndSendCopy(server.Conn.ReadPackets(), client.Conn.WritePackets, syncFunc)
+			pks := server.Conn.ReadPackets()
+			// DEBUG: 暂时使用 go func 以防止造成可能的阻塞
+			go WSInterface.BroadcastPacketsToWS(server, pks)
+			errResults, syncError := server.FiltePacketsAndSendCopy(pks, client.Conn.WritePackets, syncFunc)
 			if syncError != nil {
 				pterm.Warning.Printf("Eulogist: Failed to sync data when process packets from server, and the error log is %v", syncError)
 			}
@@ -257,6 +261,10 @@ func Eulogist() error {
 			}
 		}
 	}()
+
+	// 处理 WS 到赞颂者的数据包
+	go WSInterface.StartWSServer()
+	go WSInterface.HandleWSClientMessages(server.Conn.WritePackets)
 
 	// 等待所有 goroutine 完成
 	waitGroup.Wait()
