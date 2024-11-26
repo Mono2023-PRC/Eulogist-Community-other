@@ -1,5 +1,7 @@
 package ws_interface
 
+// 处理由赞颂者发送到 WebSocket Client 的所有消息
+
 import (
 	"Eulogist/core/minecraft/protocol"
 	"Eulogist/core/minecraft/protocol/packet"
@@ -21,6 +23,9 @@ var botUniqueID int64
 var botUUID uuid.UUID
 var botRuntimeID uint64
 
+// 将 json array 序列转换为 []uint32 序列。
+// 由于 json 数组中的 int 似乎被认为是 float64,
+// 因此需要进一步的转换为 uint32
 func convertToIntArr(a any) ([]uint32, bool) {
 	newArr := []uint32{}
 	arr, ok := a.([]any)
@@ -37,11 +42,13 @@ func convertToIntArr(a any) ([]uint32, bool) {
 	return newArr, true
 }
 
+// 获取数据包的 ID
 func getPacketID(pk_bytes []byte) (pkID uint32) {
 	protocol.Varuint32(bytes.NewReader(pk_bytes), &pkID)
 	return
 }
 
+// 将数据包的字节流转换为数据包结构
 func bytesToPacket(conn *raknet_wrapper.Raknet, bs []byte) (uint32, packet.Packet, bool) {
 	var pk1 packet.Packet
 	buffer := bytes.NewBuffer(bs)
@@ -58,11 +65,15 @@ func bytesToPacket(conn *raknet_wrapper.Raknet, bs []byte) (uint32, packet.Packe
 	return pkID, pk1, true
 }
 
+// 处理第一次获取到的 StartGame 数据包
+// 以获取到当前赞颂者所使用的用户的 EntityRuntimeID 以及 EntityUniqueID
 func handleStartGame(pk packet.StartGame) {
 	botRuntimeID = pk.EntityRuntimeID
 	botUniqueID = pk.EntityUniqueID
 }
 
+// 处理第一次获取到的 PlayerList 数据包
+// 以获取到当前的玩家列表信息
 func handleFirstPlayerList(pk packet.PlayerList) {
 	for _, entry := range pk.Entries {
 		if entry.EntityUniqueID == botUniqueID {
@@ -74,6 +85,8 @@ func handleFirstPlayerList(pk packet.PlayerList) {
 	}
 }
 
+// 处理 UpdateAbilities 数据包
+// 以更新玩家能力
 func handleAbilitySet(pk packet.UpdateAbilities) {
 	playername, found := GetPlayerNameByUniqueID(pk.AbilityData.EntityUniqueID)
 	if found {
@@ -112,7 +125,7 @@ func packetIDServerNeedListen(id uint32) bool {
 	return ok
 }
 
-// 过滤掉被拦截掉的数据包
+// 过滤掉被拦截的数据包
 func FilterBlockingPackets(
 	pks []raknet_wrapper.MinecraftPacket,
 	filterFunc func(uint32) bool,
@@ -126,27 +139,30 @@ func FilterBlockingPackets(
 	return new_pks
 }
 
+// 判断 租赁服 -> Minecraft客户端 的数据包是否应该被 ws_interface 处理
+// 并转发至 WebSocket 客户端
 func HandleServerPacketsToWS(server *Server.MinecraftServer, pks []raknet_wrapper.MinecraftPacket) {
 	for _, m_pk := range pks {
-		pkID, pk, ok := bytesToPacket(server.Conn, m_pk.Bytes)
-		if !ok {
-			pterm.Error.Println("无法解析数据包:", pkID)
-			return
-		}
-		if !botDatasReady {
-			if pk1, ok := pk.(*packet.StartGame); ok {
-				handleStartGame(*pk1)
-			} else if pk1, ok := pk.(*packet.PlayerList); ok {
-				handleFirstPlayerList(*pk1)
-			}
-		}
-		if pk1, ok := pk.(*packet.PlayerList); ok {
-			handlePlayerList(*pk1)
-		}
-		if pk1, ok := pk.(*packet.UpdateAbilities); ok {
-			handleAbilitySet(*pk1)
-		}
+		pkID := getPacketID(m_pk.Bytes)
 		if packetIDServerNeedListen(pkID) {
+			_, pk, ok := bytesToPacket(server.Conn, m_pk.Bytes)
+			if !ok {
+				pterm.Error.Println("无法解析数据包:", pkID)
+				return
+			}
+			if !botDatasReady {
+				if pk1, ok := pk.(*packet.StartGame); ok {
+					handleStartGame(*pk1)
+				} else if pk1, ok := pk.(*packet.PlayerList); ok {
+					handleFirstPlayerList(*pk1)
+				}
+			}
+			if pk1, ok := pk.(*packet.PlayerList); ok {
+				handlePlayerList(*pk1)
+			}
+			if pk1, ok := pk.(*packet.UpdateAbilities); ok {
+				handleAbilitySet(*pk1)
+			}
 			BroadcastMessageToWSClients(Message{
 				Type: WSMSG_SERVER_PACKET,
 				Content: map[string]any{
@@ -158,14 +174,17 @@ func HandleServerPacketsToWS(server *Server.MinecraftServer, pks []raknet_wrappe
 	}
 }
 
+// 判断 Minecraft客户端 -> 租赁服 的数据包是否应该被 ws_interface 处理
+// 并转发至 WebSocket 客户端
 func HandleClientPacketsToWS(client *Client.MinecraftClient, pks []raknet_wrapper.MinecraftPacket) {
 	for _, m_pk := range pks {
-		pkID, pk, ok := bytesToPacket(client.Conn, m_pk.Bytes)
-		if !ok {
-			pterm.Error.Println("无法解析数据包:", pkID)
-			return
-		}
+		pkID := getPacketID(m_pk.Bytes)
 		if packetIDClientNeedListen(pkID) {
+			_, pk, ok := bytesToPacket(client.Conn, m_pk.Bytes)
+			if !ok {
+				pterm.Error.Println("无法解析数据包:", pkID)
+				return
+			}
 			BroadcastMessageToWSClients(Message{
 				Type: WSMSG_CLIENT_PACKET,
 				Content: map[string]any{
@@ -177,11 +196,13 @@ func HandleClientPacketsToWS(client *Client.MinecraftClient, pks []raknet_wrappe
 	}
 }
 
+// 来自 Minecraft 客户端的数据包的 ID 是否在需要阻拦的数据包 ID 表里
 func InClientPacketsNeedBlocking(pkID uint32) bool {
 	_, ok := client_to_server_block_packets[pkID]
 	return ok
 }
 
+// 来自租赁服的数据包的 ID 是否在需要阻拦的数据包 ID 表里
 func InServerPacketsNeedBlocking(pkID uint32) bool {
 	_, ok := server_to_client_block_packets[pkID]
 	return ok

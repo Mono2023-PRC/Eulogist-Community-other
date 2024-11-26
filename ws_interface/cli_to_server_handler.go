@@ -1,6 +1,7 @@
 package ws_interface
 
 import (
+	"Eulogist/core/minecraft/protocol/packet"
 	raknet_wrapper "Eulogist/core/raknet/wrapper"
 	"encoding/json"
 	"fmt"
@@ -23,25 +24,29 @@ var upgrader = websocket.Upgrader{
 }
 
 var client_to_server_listen_packets = map[uint32]bool{}
-var server_to_client_listen_packets = map[uint32]bool{}
+var server_to_client_listen_packets = map[uint32]bool{
+	packet.IDStartGame:        true,
+	packet.IDUpdateAttributes: true,
+	packet.IDPlayerList:       true,
+}
 var client_to_server_block_packets = map[uint32]bool{}
 var server_to_client_block_packets = map[uint32]bool{}
 
 func StartWSServer() {
-	// 开启赞颂者 WebSocket 接口服务器
+	// 开启赞颂者的 WebSocket 接口服务
 	http.HandleFunc("/", handleWSCliConnection)
 	go handleBroadcasts()
 
-	pterm.Info.Println("赞颂者在", ws_port, "开放 WebSocket 接口")
+	pterm.Info.Println("已在", ws_port, "端口开放 WebSocket 接口")
 	pterm.Error.Println(http.ListenAndServe(fmt.Sprintf(":%d", ws_port), nil))
 }
 
-// 向所有 WebSocketClient 广播消息
+// 向所有 WebSocket Client 广播消息
 func BroadcastMessageToWSClients(msg Message) {
 	broadcaster <- msg
 }
 
-// 统一处理来自所有 WebSocketClient 的通信消息
+// 统一处理来自所有 WebSocket Client 的通信消息
 func HandleWSClientsMessages(
 	writePacketsToServer func(packets []raknet_wrapper.MinecraftPacket),
 	writePacketsToClient func(packets []raknet_wrapper.MinecraftPacket),
@@ -143,7 +148,7 @@ func HandleWSClientsMessages(
 	}
 }
 
-// 处理来自单个 WebSocketClient 的连接
+// 处理来自单个 WebSocket Client 的连接
 func handleWSCliConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -160,7 +165,7 @@ func handleWSCliConnection(w http.ResponseWriter, r *http.Request) {
 	if botDatasReady {
 		sendBotBasicIDAndSetClientReady(*client)
 	} else {
-		pterm.Info.Println("客户端", conn.RemoteAddr().String(), "正在等待机器人信息获取完毕")
+		pterm.Info.Println("客户端", conn.RemoteAddr().String(), "正在等待玩家信息初始化")
 	}
 	sendUpdateUQ(*client)
 
@@ -178,12 +183,12 @@ func handleWSCliConnection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// 处理来自赞颂者向所有 WSClient 广播的消息
 func handleBroadcasts() {
-	// 处理来自赞颂者内部向所有 WSClient 广播的消息
 	for {
 		msg := <-broadcaster
 		for client := range clis {
-			err := client.sendJson(msg)
+			err := client.SendMessage(msg)
 			if err != nil {
 				pterm.Error.Println(err)
 				client.conn.Close()
@@ -194,8 +199,9 @@ func handleBroadcasts() {
 	}
 }
 
+// 分发赞颂者机器人自身的基本信息, 如玩家名, UQ 信息等
+// 然后设置所有 WebSocket 客户端连接状态为已初始化
 func handoutBotBasicInfo() {
-	// 分发赞颂者机器人自身的基本信息, 如玩家名, UQ等
 	for cli := range clis {
 		if !cli.ready {
 			sendBotBasicIDAndSetClientReady(*cli)
@@ -204,7 +210,7 @@ func handoutBotBasicInfo() {
 }
 
 func sendBotBasicIDAndSetClientReady(cli WS_Client) {
-	// 向 WSClient 客户端发送 BotBasicID 并使其得到初始化
+	// 向 WebSocket 客户端发送 BotBasicID 并使其得到初始化
 	cli.conn.WriteJSON(Message{
 		Type:    WSMSG_SET_BOT_BASIC_INFO,
 		Content: getBotBasicInfo(),
@@ -213,8 +219,8 @@ func sendBotBasicIDAndSetClientReady(cli WS_Client) {
 }
 
 func sendUpdateUQ(cli WS_Client) {
-	// 向客户端发送全局玩家 UQ 更新信息
-	cli.sendJson(Message{
+	// 向 WebSocket 客户端发送全局玩家 UQ 更新信息
+	cli.SendMessage(Message{
 		Type:    WSMSG_UPDATE_UQ,
 		Content: simple_uq_map,
 	})
@@ -250,4 +256,17 @@ func setServerToClientBlockingPackets(pk_ids []uint32) {
 	for _, v := range pk_ids {
 		server_to_client_block_packets[v] = true
 	}
+}
+
+func (cli *WS_Client) SendMessage(msg Message) error {
+	if cli.conn != nil {
+		return cli.conn.WriteJSON(msg)
+	} else {
+		return nil
+	}
+}
+
+// 设置 WebSocket 客户端的状态为已初始化
+func (cli *WS_Client) Ready() {
+	cli.ready = true
 }
