@@ -9,13 +9,18 @@ import (
 // WebSocket 通信部分
 
 const (
-	WSMSG_CLIENT_PACKET             = "ClientMCPacket"
-	WSMSG_SERVER_PACKET             = "ServerMCPacket"
-	WSMSG_SET_BOT_BASIC_INFO        = "SetBotBasicInfo"
-	WSMSG_SET_SERVER_LISTEN_PACKETS = "SetServerListenPackets"
-	WSMSG_SET_CLIENT_LISTEN_PACKETS = "SetClientListenPackets"
-	WSMSG_UPDATE_UQ                 = "UpdateUQ"
-	WSMSG_UPDATE_ABILITIES          = "UpdateAbilities"
+	// basic
+	WSMSG_CLIENT_PACKET               = "ClientMCPacket"           // [赞颂者->WSCli] 来自 Minecraft 客户端的数据包
+	WSMSG_SERVER_PACKET               = "ServerMCPacket"           // [赞颂者->WSCli] 来自租赁服服务端的数据包
+	WSMSG_SET_BOT_BASIC_INFO          = "SetBotBasicInfo"          // [赞颂者->WSCli] 设置玩家基本信息 (RuntimeID 等)
+	WSMSG_SET_SERVER_LISTEN_PACKETS   = "SetServerListenPackets"   // [WSCli->赞颂者] 设置需要监听的来自服务器的数据包
+	WSMSG_SET_CLIENT_LISTEN_PACKETS   = "SetClientListenPackets"   // [WSCli->赞颂者] 设置需要监听的来自客户端的数据包
+	WSMSG_SET_BLOCKING_SERVER_PACKETS = "SetBlockingServerPackets" // [WSCli->赞颂者] 设置需要拦截的来自服务器的数据包
+	WSMSG_SET_BLOCKING_CLIENT_PACKETS = "SetBlockingClientPackets" // [WSCli->赞颂者] 设置需要拦截的来自客户端的数据包
+	WSMSG_UPDATE_UQ                   = "UpdateUQ"                 // [赞颂者->WSCli] 更新客户端玩家数据
+	WSMSG_UPDATE_ABILITIES            = "UpdateAbilities"          // [赞颂者->WSCli] 更新客户端玩家能力数据
+	// external
+	WSMSG_BreakBlock = "BreakBlock" // [WSCli->赞颂者] 请求挖掘方块
 )
 
 type WS_Client struct {

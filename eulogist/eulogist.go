@@ -195,7 +195,11 @@ func Eulogist() error {
 			// 向所有 WebSocket 客户端广播数据包
 			// DEBUG: 暂时使用 go func 以防止造成可能的阻塞
 			go WSInterface.HandleServerPacketsToWS(server, pks)
-			errResults, syncError := server.FiltePacketsAndSendCopy(pks, client.Conn.WritePackets, syncFunc)
+			errResults, syncError := server.FiltePacketsAndSendCopy(
+				WSInterface.FilterBlockingPackets(
+					pks, WSInterface.InServerPacketsNeedBlocking,
+				), client.Conn.WritePackets, syncFunc,
+			)
 			if syncError != nil {
 				pterm.Warning.Printf("Eulogist: Failed to sync data when process packets from server, and the error log is %v", syncError)
 			}
@@ -245,7 +249,11 @@ func Eulogist() error {
 			// 然后抄送其到网易租赁服
 			pks := client.Conn.ReadPackets()
 			WSInterface.HandleClientPacketsToWS(client, pks)
-			errResults, syncError := client.FiltePacketsAndSendCopy(pks, server.Conn.WritePackets, syncFunc)
+			errResults, syncError := client.FiltePacketsAndSendCopy(
+				WSInterface.FilterBlockingPackets(
+					pks, WSInterface.InClientPacketsNeedBlocking,
+				), server.Conn.WritePackets, syncFunc,
+			)
 			if syncError != nil {
 				pterm.Warning.Printf("Eulogist: Failed to sync data when process packets from client, and the error log is %v", syncError)
 			}
@@ -267,7 +275,7 @@ func Eulogist() error {
 
 	// 处理 WS 到赞颂者的数据包
 	go WSInterface.StartWSServer()
-	go WSInterface.HandleWSClientsMessages(server.Conn.WritePackets)
+	go WSInterface.HandleWSClientsMessages(server.Conn.WritePackets, client.Conn.WritePackets)
 
 	// 等待所有 goroutine 完成
 	waitGroup.Wait()

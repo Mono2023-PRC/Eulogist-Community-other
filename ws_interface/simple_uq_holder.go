@@ -33,7 +33,7 @@ func handlePlayerList(pk packet.PlayerList) {
 			leaveUQ(entry)
 		}
 	}
-	BroadcastMessageToWS(Message{
+	BroadcastMessageToWSClients(Message{
 		Type:    WSMSG_UPDATE_UQ,
 		Content: simple_uq_map,
 	})
